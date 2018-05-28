@@ -3,6 +3,7 @@
 # Lucas cordeiro da Silva
 # UFF - Universidade Federal Fluminense
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import operator
@@ -20,18 +21,26 @@ import scipy.stats as stats
 from math import sqrt
 
 
-class methodkmeans(object):
+# Prototipo com funcoes para execucao dos metodos Kmeans e KNN
+class RecommenderSystem(object):
+
+    kmeans = None
+    knn = None
+
+    # Matriz numpy para treino
+    X = None
+
+    def __init__(self, matrix):
+        self.X = matrix
 
     # Encontrar o id dos usuários que pertencem ao mesmo cluster
-    @staticmethod
-    def ClusterIndicesNumpy(clustNum, labels_array):  # numpy
+    def ClusterIndicesNumpy(self, clustNum, labels_array):  # numpy
         return np.where(labels_array == clustNum)[0]
 
     # Encontrar os filmes que o usuário ativo já assistiu
-    @staticmethod
-    def getWatchedMovies(user_vector):  # numpy
+    def getWatchedMovies(self, user_vector):  # numpy
         evaluations = {}
-        # pega filmes assistidos pelo usuário alvo
+        # pega filmes assistidos pelo usuário ativo
         for i, col in enumerate(user_vector):
             if col > 0:
                 evaluations.setdefault(i, None)
@@ -39,8 +48,7 @@ class methodkmeans(object):
         return evaluations
 
     # Montar matriz usuariossimilares-filmes
-    @staticmethod
-    def mountSimilarUsersMatrix(matrix, users):
+    def mountSimilarUsersMatrix(self, matrix, users):
         users_vector = []
 
         for user in users:
@@ -48,8 +56,7 @@ class methodkmeans(object):
         return users_vector
 
     # Gerar recomendacao de notas para filmes
-    @staticmethod
-    def recommendMovies(similarusers_matrix, activeuser_whatchedmovies):
+    def recommendMovies(self, similarusers_matrix, activeuser_whatchedmovies):
 
         # Contador de avaliacoes
         ratings = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
@@ -72,50 +79,106 @@ class methodkmeans(object):
         return recommendation
 
     # Avaliar Recomendacao usando Kendall Tau, MAE, RMSE
-    @staticmethod
-    def PredictionAccuracy(y_true, y_pred):
-        tau, pvalue = stats.kendalltau(y_true, y_pred)
+    def PredictionAccuracy(self, y_true, y_pred):
+        tau = stats.kendalltau(y_true, y_pred)[0]
         mae = mean_absolute_error(y_true, y_pred)
         rmse = sqrt(mean_squared_error(y_true, y_pred))
+
         return {"Tau": tau, "MAE": mae, "RMSE": rmse}
 
-    # Pegar usuários similares
-    @staticmethod
-    def getSimilarUsers(matrix, activeuser_vector):
-
-        # matrix numpy
-        X = np.array(matrix)
-
-        # Instancear o objeto kmeans
-        kmeans = KMeans(n_clusters=4, algorithm="full")
+    # Train kmeans
+    def trainkmeans(self, X, k):
+        # Instanciar o objeto kmeans
+        self.kmeans = KMeans(n_clusters=k)
 
         # Computar k-means clustering
-        kmeans.fit(X)
+        self.kmeans.fit(X)
+
+    # Train kmeans
+    def trainknn(self, X, k):
+        # Instanciar o objeto KNN
+        self.nbrs = NearestNeighbors(n_neighbors=k, metric='euclidean')
+
+        # Computar kNN
+        self.nbrs.fit(X)
+
+    # Pegar usuários similares usando K-Means
+    def getSimilarUserskmeans(self, matrix, activeuser_vector):
 
         # Rótulo do cluster que cada usuário pertence
-        users_clusterlabel = kmeans.labels_
+        users_clusterlabel = self.kmeans.labels_
 
         # Preveja o cluster mais próximo em que cada amostra pertence
-        activeuser_clusterlabel = kmeans.predict([activeuser_vector])
-
-        # print(activeuser_clusterid)
-        # print(users_clusterid)
+        activeuser_clusterlabel = self.kmeans.predict([activeuser_vector])
 
         # Encontrar todos os usuários que pertencem ao mesmo cluster
-        similarusers = methodkmeans.ClusterIndicesNumpy(
+        similarusers = self.ClusterIndicesNumpy(
             activeuser_clusterlabel, users_clusterlabel)
 
-        # print(users)
-        # print(matrix[41])
+        print("kmeans: ", similarusers)
 
         # Gerar matrix usuariossimilares-filmes
-        similarusers_matrix = methodkmeans.mountSimilarUsersMatrix(
+        similarusers_matrix = self.mountSimilarUsersMatrix(
             matrix, similarusers)
 
-        # print(users_vector[1])
         return similarusers_matrix
 
+    # Pegar usuários similares usando KNN
+    def getSimilarUsersknn(self, matrix, activeuser_vector):
 
+        # Preveja quais sao os K usuarios mais proximos ao usuario ativo
+        distances, similarusers = self.nbrs.kneighbors([activeuser_vector])
+
+        print("knn: ", similarusers)
+
+        # Gerar matrix usuariossimilares-filmes
+        similarusers_matrix = self.mountSimilarUsersMatrix(
+            matrix, similarusers[0])
+
+        return similarusers_matrix
+
+    # Exibe os gráficos
+    def renderCharts(self, results, kvalues):
+        # Tau
+        kmeans_points_tau = [_["kmeans"]["tau"] for _ in results]
+        knn_points_tau = [_["knn"]["tau"] for _ in results]
+        plt.figure(1)
+        plt.plot(kvalues, kmeans_points_tau, 'o-')
+        plt.plot(kvalues, knn_points_tau, 'o-')
+        plt.title('K-Means(Blue) vs Knn(Orange)')
+        plt.ylabel('Tau')
+        plt.xlabel('K')
+        plt.xticks(kvalues)
+        plt.yticks(kmeans_points_tau + knn_points_tau)
+
+        # MAE
+        kmeans_points_mae = [_["kmeans"]["mae"] for _ in results]
+        knn_points_mae = [_["knn"]["mae"] for _ in results]
+        plt.figure(2)
+        plt.plot(kvalues, kmeans_points_mae, 'o-')
+        plt.plot(kvalues, knn_points_mae, 'o-')
+        plt.title('K-Means(Blue) vs Knn(Orange)')
+        plt.ylabel('mae')
+        plt.xlabel('K')
+        plt.xticks(kvalues)
+        plt.yticks(kmeans_points_mae + knn_points_mae)
+
+        # RMSE
+        kmeans_points_rmse = [_["kmeans"]["rmse"] for _ in results]
+        knn_points_rmse = [_["knn"]["rmse"] for _ in results]
+        plt.figure(3)
+        plt.plot(kvalues, kmeans_points_rmse, 'o-')
+        plt.plot(kvalues, knn_points_rmse, 'o-')
+        plt.title('K-Means(Blue) vs Knn(Orange)')
+        plt.ylabel('rmse')
+        plt.xlabel('K')
+        plt.xticks(kvalues)
+        plt.yticks(kmeans_points_rmse + knn_points_rmse)
+
+        plt.show()
+
+
+#
 class Data(object):
 
     # Matrix user-movie
@@ -155,75 +218,139 @@ class Data(object):
 
         last = int(round(num_users * self.trainpercentage))
 
-        self.matrixtrain = self.matrix[0:last]
-        self.matrixtest = self.matrix[last:num_users]
+        self.matrixtrain = self.matrix[:last]
+        self.matrixtest = self.matrix[last:]
 
 
 # Inicia tudo
 def main():
 
-    # Tamanho da matrix de treinamento, 0.5 => 50% treinamento e 50% teste
-    trainpercentage = 0.99
-    # Ler dataset
-    data = Data("100k/u.data", trainpercentage)
+    # trainpercentage = 0.8
+    # data = Data("100k/u.data", trainpercentage)
+    # # matrix numpy
+    # X = np.array(data.matrixtrain)
+    # k = 3
+    # nbrs = NearestNeighbors(n_neighbors=k)
+
+    # nbrs.fit(X)
+
+    # nbrs.fit([[1, 2, 3, 4, 5], [1, 1, 1, 1, 1], [2, 2, 2, 2, 2]])
+
+    # distances, indices = nbrs.kneighbors([[1, 1, 1, 1, 1]])
+    # print(indices[0])
+    # sys.exit()
 
     # K-Means Method -------------------------------------------
-    result = {"Tau": [], "MAE": [], "RMSE": []}
 
-    print(len(data.matrixtest))
+    # Parametros de funcionamento do K
+    k_min = 3
+    k_max = 13
+    step = 1
 
-    for user in data.matrixtest:
-        # 1- Definir vetor do usuário ativo e rank real
-        activeuser_vector = user
-        activeuser_whatchedmovies = methodkmeans.getWatchedMovies(
-            activeuser_vector)
+    # Tamanho da matrix de treinamento, ex: 0.5 -> 50% treinamento e 50% teste
+    trainpercentage = 0.70
 
-        # 2- Encontrar usuários similares ao usuário ativo
-        similarusers_matrix = methodkmeans.getSimilarUsers(
-            data.matrixtrain, activeuser_vector)
+    # Ler dataset
+    # The full u data set, 100000 ratings by 943 users on 1682 items.
+    # Each user has rated at least 20 movies.  Users and items are
+    # numbered consecutively from 1.  The data is randomly
+    # ordered. This is a tab separated list of
+    # user id | item id | rating | timestamp.
+    # The time stamps are unix seconds since 1/1/1970 UTC
+    # https://grouplens.org/datasets/movielens/100k/
+    data = Data("100k/u.data", trainpercentage)
 
-        # 3- Recomendar filmes dos usuários similares ao usuário ativo
-        recommendation = methodkmeans.recommendMovies(
-            similarusers_matrix, activeuser_whatchedmovies)
+    # Lista com os resultados finais variando k
+    results = []
 
-        # 4- Precisão da previsão
-        Tau, Mae, Rmse = methodkmeans.PredictionAccuracy(
-            list(activeuser_whatchedmovies.values()), list(recommendation.values())).values()
+    # matrix numpy
+    X = np.array(data.matrixtrain)
 
-        result["Tau"].append(Tau)
-        result["MAE"].append(Mae)
-        result["RMSE"].append(Rmse)
+    # Criar objeto prototipo
+    RecommenderSystemd = RecommenderSystem(X)
 
-        print("Predicted Ratings: ", recommendation, "\n")
-        print("Real ratings: ", activeuser_whatchedmovies, "\n")
+    # para cada valor de K
+    kvalues = [k for k in range(k_min, (k_max + step), step)]
+    for k in range(k_min, (k_max + step), step):
 
-    result["Tau"] = sum(x for x in result["Tau"]) / len(result["Tau"])
-    result["MAE"] = sum(x for x in result["MAE"]) / len(result["MAE"])
-    result["RMSE"] = sum(x for x in result["RMSE"]) / len(result["RMSE"])
+        # Metricas de avaliacao da recomendacao
+        metrics = {"kmeans": {"tau": [], "mae": [], "rmse": []},
+                   "knn": {"tau": [], "mae": [], "rmse": []}}
 
-    print("Prediction accuracy: ", result)
+        print("k: ", k)
 
-    # K-NN Method -------------------------------------------
+        # 1- Treinar conjundo de dados
+        RecommenderSystemd.trainkmeans(X, k)
+        RecommenderSystemd.trainknn(X, k)
 
-    # # 1- Definir vetor do usuário ativo e rank real
-    # activeuser_vector = data.matrix[942]
-    # activeuser_whatchedmovies = methodkmeans.getWatchedMovies(activeuser_vector)
+        # para cada usuario de teste
+        for user in data.matrixtest:
 
-    # # 2- Encontrar usuários similares ao usuário ativo
-    # similarusers_matrix = methodkmeans.getSimilarUsers(
-    #     data.matrix[0:942], activeuser_vector)
+            # 2- Definir vetor do usuário ativo e rank real
+            activeuser_vector = user
+            activeuser_whatchedmovies = RecommenderSystemd.getWatchedMovies(
+                activeuser_vector)
 
-    # # 3- Recomendar filmes dos usuários similares ao usuário ativo
-    # movies = methodkmeans.recommendMovies(
-    #     similarusers_matrix, activeuser_whatchedmovies)
+            # 3- Encontrar usuários similares ao usuário ativo
+            # K-Means
+            similarusers_matrix = RecommenderSystemd.getSimilarUserskmeans(
+                data.matrixtrain, activeuser_vector)
 
-    # # 4- Prediction accuracy
-    # result = methodkmeans.PredictionAccuracy(
-    #     list(activeuser_whatchedmovies.values()), list(movies.values()))
+            # KNN
+            similarusers_matrixknn = RecommenderSystemd.getSimilarUsersknn(
+                data.matrixtrain, activeuser_vector)
 
-    # print("Predicted Ratings: ", movies, "\n")
-    # print("Real ratings: ", activeuser_whatchedmovies, "\n")
-    # print("Prediction accuracy: ", result)
+            # 4- Recomendar filmes dos usuários similares ao usuário ativo
+            # K-Means
+            recommendation = RecommenderSystemd.recommendMovies(
+                similarusers_matrix, activeuser_whatchedmovies)
+
+            # KNN
+            recommendationknn = RecommenderSystemd.recommendMovies(
+                similarusers_matrixknn, activeuser_whatchedmovies)
+
+            # 5- Calcular Precisao da previsão
+            # K-Means
+            tau, mae, rmse = RecommenderSystemd.PredictionAccuracy(
+                list(activeuser_whatchedmovies.values()), list(recommendation.values())).values()
+
+            # K-NN
+            tauknn, maeknn, rmseknn = RecommenderSystemd.PredictionAccuracy(
+                list(activeuser_whatchedmovies.values()), list(recommendationknn.values())).values()
+
+            # Guardar os calculos de precisao
+            metrics["kmeans"]["tau"].append(tau)
+            metrics["kmeans"]["mae"].append(mae)
+            metrics["kmeans"]["rmse"].append(rmse)
+            metrics["knn"]["tau"].append(tauknn)
+            metrics["knn"]["mae"].append(maeknn)
+            metrics["knn"]["rmse"].append(rmseknn)
+            # print("Predicted Ratings: ", recommendation, "\n")
+            # print("Real ratings: ", activeuser_whatchedmovies, "\n")
+
+        # Encontrar a média dos calculos de precisao e guardar
+        metrics["kmeans"]["tau"] = sum(
+            x for x in metrics["kmeans"]["tau"]) / len(metrics["kmeans"]["tau"])
+        metrics["kmeans"]["mae"] = sum(
+            x for x in metrics["kmeans"]["mae"]) / len(metrics["kmeans"]["mae"])
+        metrics["kmeans"]["rmse"] = sum(x for x in metrics["kmeans"]["rmse"]
+                                        ) / len(metrics["kmeans"]["rmse"])
+        metrics["knn"]["tau"] = sum(
+            x for x in metrics["knn"]["tau"]) / len(metrics["knn"]["tau"])
+        metrics["knn"]["mae"] = sum(
+            x for x in metrics["knn"]["mae"]) / len(metrics["knn"]["mae"])
+        metrics["knn"]["rmse"] = sum(x for x in metrics["knn"]["rmse"]
+                                     ) / len(metrics["knn"]["rmse"])
+
+        # Adiciona o valor das metricas no vetor de resultados
+        results.append(metrics)
+
+    # Imprimir resultados
+    print("Prediction accuracy: ", results)
+
+    RecommenderSystemd.renderCharts(results, kvalues)
+
+    print("kvalues", kvalues)
 
 
 if __name__ == "__main__":
