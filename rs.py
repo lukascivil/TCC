@@ -8,22 +8,23 @@
 # Lucas cordeiro da Silva
 # UFF - Universidade Federal Fluminense
 
-import matplotlib.pyplot as plt
+# Ajudantes
 import numpy as np
 import pandas as pd
 import operator
+from math import sqrt
 
-# Methods
+# Graficos
+import matplotlib.pyplot as plt
+
+# Metodos do sklearn
 from sklearn.cluster import KMeans
 from sklearn.neighbors import NearestNeighbors
 
-# Metrics
+# Metricas do sklearn e scipy
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import mean_squared_error
 import scipy.stats as stats
-
-# math
-from math import sqrt
 
 
 # Prototipo com funcoes para execucao dos metodos Kmeans e KNN
@@ -32,11 +33,8 @@ class RecommenderSystem(object):
     kmeans = None
     knn = None
 
-    # Matriz numpy para treino
-    X = None
-
-    def __init__(self, matrix):
-        self.X = matrix
+    def __init__(self):
+        pass
 
     # Encontrar o id dos usuários que pertencem ao mesmo cluster
     def ClusterIndicesNumpy(self, clustNum, labels_array):  # numpy
@@ -45,6 +43,11 @@ class RecommenderSystem(object):
     # Definir peso de acordo com a distancia
     def DefineWeight(self, distance):
         return 1/(distance)**2
+        # return 1
+
+    # Retorna o número de clusters que tem k vizinhos
+    def numberOfGroups(self, trainsize, k_neighbors):
+        return int(trainsize/k_neighbors)
 
     # Distancia Euclidiana
     def euclideanDistance(self, user1, user2):
@@ -63,7 +66,7 @@ class RecommenderSystem(object):
 
         # Contador de avaliacoes
         ratings = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-        recommendation = {}
+        rp = {}
 
         # Predizer notas aos filmes
         for movie in activeuser_whatchedmovies:
@@ -74,12 +77,12 @@ class RecommenderSystem(object):
                 if rating > 0:
                     ratings[rating] += (1 * weights[i])
                 i += 1
-            recommendation.setdefault(movie, None)
+            rp.setdefault(movie, None)
             # Pega a nota com maior ocorrencia , ex: {1: 3, 2: 7, 3: 19, 4: 26, 5: 6} => 4
-            recommendation[movie] = max(
+            rp[movie] = max(
                 ratings.items(), key=operator.itemgetter(1))[0]
 
-        return recommendation
+        return rp
 
     # Avaliar predicao usando Kendall Tau, MAE e RMSE
     def PredictionAccuracy(self, y_true, y_pred):
@@ -89,20 +92,16 @@ class RecommenderSystem(object):
 
         return {"Tau": tau, "MAE": mae, "RMSE": rmse}
 
-    # Train kmeans
+    # Train K-Means
     def trainkmeans(self, X, k):
-        # Instanciar o objeto kmeans
+        # Instanciar o objeto kmeans e treinar
         self.kmeans = KMeans(n_clusters=k)
-
-        # Computar k-means clustering
         self.kmeans.fit(X)
 
-    # Train kmeans
+    # Train KNN
     def trainknn(self, X, k):
-        # Instanciar o objeto KNN
+        # Instanciar o objeto KNN e treinar
         self.nbrs = NearestNeighbors(n_neighbors=k, metric='euclidean')
-
-        # Computar kNN
         self.nbrs.fit(X)
 
     # Pegar usuários similares usando K-Means
@@ -111,12 +110,14 @@ class RecommenderSystem(object):
         # Rótulo do cluster que cada usuário pertence
         users_clusterlabel = self.kmeans.labels_
 
-        # Preveja o cluster mais próximo em que cada amostra pertence
+        # Preveja o cluster mais próximo do usuário ativo
         activeuser_clusterlabel = self.kmeans.predict([activeuser_vector])
 
-        # Encontrar todos os usuários que pertencem ao mesmo cluster
+        # Encontrar todos os usuários que pertencem ao cluster do usuário ativo
         similarusers = self.ClusterIndicesNumpy(
             activeuser_clusterlabel, users_clusterlabel)
+
+        # print(len(similarusers))
 
         # Gerar matrix usuariossimilares-filmes
         similarusers_matrix = self.mountSimilarUsersMatrix(
@@ -136,6 +137,8 @@ class RecommenderSystem(object):
         # Preveja quais sao os K usuarios mais proximos ao usuario ativo
         distances, similarusers = self.nbrs.kneighbors([activeuser_vector])
 
+        # print(len(similarusers[0]))
+
         # Gerar matrix usuariossimilares-filmes
         similarusers_matrix = self.mountSimilarUsersMatrix(
             matrix, similarusers[0])
@@ -146,42 +149,43 @@ class RecommenderSystem(object):
         return similarusers_matrix, weights
 
     # Exibe os gráficos
-    def renderCharts(self, results, kvalues):
+    def renderCharts(self, results, k):
+
         # Tau
         kmeans_points_tau = [_["kmeans"]["tau"] for _ in results]
         knn_points_tau = [_["knn"]["tau"] for _ in results]
         plt.figure(1)
-        plt.plot(kvalues, kmeans_points_tau, 'o-')
-        plt.plot(kvalues, knn_points_tau, 'o-')
-        plt.title('K-Means(Blue) vs Knn(Orange)')
-        plt.ylabel('Tau')
+        plt.plot(k, kmeans_points_tau, 'o-')
+        plt.plot(k, knn_points_tau, 'o-')
+        plt.title('K-Means(Azul) vs Knn(Laranja)')
+        plt.ylabel('Kendall-Tau')
         plt.xlabel('K')
-        plt.xticks(kvalues)
-        plt.yticks(kmeans_points_tau + knn_points_tau)
+        plt.xticks(k)
+        # plt.yticks(kmeans_points_mae + knn_points_mae)
 
         # MAE
         kmeans_points_mae = [_["kmeans"]["mae"] for _ in results]
         knn_points_mae = [_["knn"]["mae"] for _ in results]
         plt.figure(2)
-        plt.plot(kvalues, kmeans_points_mae, 'o-')
-        plt.plot(kvalues, knn_points_mae, 'o-')
-        plt.title('K-Means(Blue) vs Knn(Orange)')
-        plt.ylabel('mae')
+        plt.plot(k, kmeans_points_mae, 'o-')
+        plt.plot(k, knn_points_mae, 'o-')
+        plt.title('K-Means(Azul) vs Knn(Laranja)')
+        plt.ylabel('MAE')
         plt.xlabel('K')
-        plt.xticks(kvalues)
-        plt.yticks(kmeans_points_mae + knn_points_mae)
+        plt.xticks(k)
+        # plt.yticks(kmeans_points_mae + knn_points_mae)
 
         # RMSE
         kmeans_points_rmse = [_["kmeans"]["rmse"] for _ in results]
         knn_points_rmse = [_["knn"]["rmse"] for _ in results]
         plt.figure(3)
-        plt.plot(kvalues, kmeans_points_rmse, 'o-')
-        plt.plot(kvalues, knn_points_rmse, 'o-')
-        plt.title('K-Means(Blue) vs Knn(Orange)')
-        plt.ylabel('rmse')
+        plt.plot(k, kmeans_points_rmse, 'o-')
+        plt.plot(k, knn_points_rmse, 'o-')
+        plt.title('K-Means(Azul) vs Knn(Laranja)')
+        plt.ylabel('RMSE')
         plt.xlabel('K')
-        plt.xticks(kvalues)
-        plt.yticks(kmeans_points_rmse + knn_points_rmse)
+        plt.xticks(k)
+        # plt.yticks(kmeans_points_rmse + knn_points_rmse)
 
         plt.show()
 
@@ -234,11 +238,11 @@ class Data(object):
 # Inicia tudo
 def main():
     # Parametros de funcionamento do K
-    k_min = 3
-    k_max = 13
+    k_min = 1
+    k_max = 10
     step = 1
 
-    # Lista de K a serem estudados
+    # Lista de k vizinhos a serem estudados
     kvalues = [k for k in range(k_min, (k_max + step), step)]
 
     # Tamanho da matrix de treinamento, ex: 0.5 -> 50% treinamento e 50% teste
@@ -261,9 +265,8 @@ def main():
     X = np.array(data.matrixtrain)
 
     # Criar objeto prototipo
-    RecommenderSystemd = RecommenderSystem(X)
+    RecommenderSystemd = RecommenderSystem()
 
-    # para cada valor de K
     for k in kvalues:
 
         # Metricas de avaliacao
@@ -319,29 +322,27 @@ def main():
             metrics["knn"]["mae"].append(maeknn)
             metrics["knn"]["rmse"].append(rmseknn)
 
-        # Encontrar a média dos calculos de precisao e guardar
-        metrics["kmeans"]["tau"] = sum(
-            x for x in metrics["kmeans"]["tau"]) / len(metrics["kmeans"]["tau"])
-        metrics["kmeans"]["mae"] = sum(
-            x for x in metrics["kmeans"]["mae"]) / len(metrics["kmeans"]["mae"])
-        metrics["kmeans"]["rmse"] = sum(x for x in metrics["kmeans"]["rmse"]
-                                        ) / len(metrics["kmeans"]["rmse"])
-        metrics["knn"]["tau"] = sum(
-            x for x in metrics["knn"]["tau"]) / len(metrics["knn"]["tau"])
-        metrics["knn"]["mae"] = sum(
-            x for x in metrics["knn"]["mae"]) / len(metrics["knn"]["mae"])
-        metrics["knn"]["rmse"] = sum(x for x in metrics["knn"]["rmse"]
-                                     ) / len(metrics["knn"]["rmse"])
+        # Calcular a média do resultado das metricas
+        metrics["kmeans"]["tau"] = np.nansum(
+            metrics["kmeans"]["tau"]) / len(metrics["kmeans"]["tau"])
+        metrics["kmeans"]["mae"] = np.sum(
+            metrics["kmeans"]["mae"]) / len(metrics["kmeans"]["mae"])
+        metrics["kmeans"]["rmse"] = np.sum(
+            metrics["kmeans"]["rmse"]) / len(metrics["kmeans"]["rmse"])
+        metrics["knn"]["tau"] = np.nansum(
+            metrics["knn"]["tau"]) / len(metrics["knn"]["tau"])
+        metrics["knn"]["mae"] = np.sum(
+            metrics["knn"]["mae"]) / len(metrics["knn"]["mae"])
+        metrics["knn"]["rmse"] = np.sum(
+            metrics["knn"]["rmse"]) / len(metrics["knn"]["rmse"])
 
         # Adiciona o valor das metricas no vetor de resultados
         results.append(metrics)
 
     # Imprimir resultados
-    print("Prediction accuracy: ", results)
+    print("Metricas de avaliacao: ", results)
 
     RecommenderSystemd.renderCharts(results, kvalues)
-
-    print("kvalues", kvalues)
 
 
 if __name__ == "__main__":
