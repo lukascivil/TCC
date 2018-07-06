@@ -45,10 +45,6 @@ class RecommenderSystem(object):
         return 1/(distance)**2
         # return 1
 
-    # Retorna o número de clusters que tem k vizinhos
-    def numberOfGroups(self, trainsize, k_neighbors):
-        return int(trainsize/k_neighbors)
-
     # Distancia Euclidiana
     def euclideanDistance(self, user1, user2):
         return sqrt(sum(pow(a-b, 2) for a, b in zip(user1, user2)))
@@ -267,6 +263,7 @@ def main():
     # Criar objeto prototipo
     RecommenderSystemd = RecommenderSystem()
 
+    # para cada valor de k
     for k in kvalues:
 
         # Metricas de avaliacao
